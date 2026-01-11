@@ -19,12 +19,12 @@ git clone https://github.com/3tb3301/Vesion
 pnpm install
 ```
 
-### Build venco:
+### Build Vesion:
 ```bash
 pnpm build
 ```
 
-### Inject venco into your desktop client:
+### Inject Vesion into your desktop client:
 ```bash
 pnpm inject
 ```
