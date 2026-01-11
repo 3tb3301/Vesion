@@ -11,7 +11,7 @@ npm i -g pnpm
 
 ### Clone venco:
 ```bash
-git clone https://github.com/3tb3301/VencoCustom
+git clone https://github.com/3tb3301/Vesion
 ```
 
 ### Install dependencies:
