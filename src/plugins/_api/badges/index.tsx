@@ -33,7 +33,7 @@ import { closeModal, ModalContent, ModalFooter, ModalHeader, ModalRoot, openModa
 import definePlugin from "@utils/types";
 import { ContextMenuApi, Forms, Menu, Toasts, UserStore } from "@webpack/common";
 
-const CONTRIBUTOR_BADGE = "https://cdn.discordapp.com/attachments/1407566060822986755/1459584844047847566/1-0da2ffe8207ea1f48097f56939ee6201938cf5af.png?ex=6963cfd0&is=69627e50&hm=9563f90162e6313160840e304b615dbc8fdba8621de47952df4e964773ce0f18&";
+const CONTRIBUTOR_BADGE = "https://cdn.discordapp.com/emojis/1092089799109775453.png?size=64";
 
 const ContributorBadge: ProfileBadge = {
     description: "Vencord Contributor",
@@ -91,15 +91,11 @@ export default definePlugin({
             find: "#{intl::PROFILE_USER_BADGES}",
             replacement: [
                 {
-                    match: /(?<=\{[^}]*?)badges:\i(?=[^}]*?}=(\i))/,
-                    replace: "_$&=$self.useBadges($1.displayProfile).concat($1.badges)"
-                },
-                {
                     match: /alt:" ","aria-hidden":!0,src:.{0,50}(\i).iconSrc/,
                     replace: "...$1.props,$&"
                 },
                 {
-                    match: /(?<="aria-label":(\i)\.description,.{0,200}?)children:/g,
+                    match: /(?<=forceOpen:.{0,40}?\i\((\i)\.id\).{0,100}?)children:/,
                     replace: "children:$1.component?$self.renderBadgeComponent({...$1}) :"
                 },
                 // handle onClick and onContextMenu
@@ -108,6 +104,13 @@ export default definePlugin({
                     replace: "...$self.getBadgeMouseEventHandlers($1),$&"
                 }
             ]
+        },
+        {
+            find: "getLegacyUsername(){",
+            replacement: {
+                match: /getBadges\(\)\{.{0,100}?return\[/,
+                replace: "$&...$self.getBadges(this),"
+            }
         }
     ],
 
@@ -140,14 +143,13 @@ export default definePlugin({
         clearInterval(intervalId);
     },
 
-    // doesn't use hooks itself, but some plugins might do so in their getBadges function
-    useBadges(profile: { userId: string; guildId: string; }) {
+    getBadges(profile: { userId: string; guildId: string; }) {
         if (!profile) return [];
 
         try {
             return _getBadges(profile);
         } catch (e) {
-            new Logger("BadgeAPI#useBadges").error(e);
+            new Logger("BadgeAPI#getBadges").error(e);
             return [];
         }
     },
