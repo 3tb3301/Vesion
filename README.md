@@ -9,7 +9,7 @@ npm i -g pnpm
 > [!IMPORTANT]
 > Make sure you aren't using an admin/root terminal from here onwards. It will mess up your Discord/venco instance and you will most likely have to reinstall.
 
-### Clone venco:
+### Clone  Vesion:
 ```bash
 git clone https://github.com/3tb3301/Vesion
 ```
