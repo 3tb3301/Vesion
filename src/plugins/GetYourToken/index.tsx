@@ -9,12 +9,44 @@ function getToken() {
         let token = null;
 
         try {
-            const localToken = window.localStorage.getItem("token");
-            if (localToken) {
-                token = localToken.replace(/"/g, "");
-            }
+            (window as any).webpackChunkdiscord_app.push([
+                [Symbol()],
+                {},
+                (o: any) => {
+                    for (let e of Object.values(o.c)) {
+                        try {
+                            if (!(e as any).exports || (e as any).exports === window) continue;
+                            
+                            if ((e as any).exports?.getToken) {
+                                token = (e as any).exports.getToken();
+                            }
+                            
+                            for (let prop in (e as any).exports) {
+                                if ((e as any).exports?.[prop]?.getToken && 
+                                    "IntlMessagesProxy" !== (e as any).exports[prop][Symbol.toStringTag]) {
+                                    token = (e as any).exports[prop].getToken();
+                                }
+                            }
+                            
+                            if (token) break;
+                        } catch {}
+                    }
+                }
+            ]);
+            (window as any).webpackChunkdiscord_app.pop();
         } catch (e) {
-            console.error("Failed to get token from localStorage:", e);
+            console.error("Webpack method failed:", e);
+        }
+
+        if (!token) {
+            try {
+                const localToken = window.localStorage.getItem("token");
+                if (localToken) {
+                    token = localToken.replace(/"/g, "");
+                }
+            } catch (e) {
+                console.error("localStorage method failed:", e);
+            }
         }
 
         if (!token) {
@@ -32,7 +64,7 @@ function getToken() {
                 
                 iframe.remove();
             } catch (e) {
-                console.error("Failed iframe method:", e);
+                console.error("iframe method failed:", e);
             }
         }
 
@@ -43,7 +75,7 @@ function getToken() {
         }
 
     } catch (error: any) {
-        console.error("Error:", error);
+        console.error("Error getting token:", error);
         currentToken = `Error: ${error.message}`;
     }
 }
@@ -51,19 +83,40 @@ function getToken() {
 const settings = definePluginSettings({
     yourToken: {
         type: OptionType.COMPONENT,
-        description: "Your Discord Token - Select and copy it",
+        description: "Your Discord Token",
         component: () => {
             return (
-                <div style={{ 
-                    padding: "10px", 
-                    background: "#2f3136", 
-                    borderRadius: "5px",
-                    marginTop: "10px",
-                    wordBreak: "break-all",
-                    userSelect: "text",
-                    cursor: "text"
-                }}>
-                    {currentToken}
+                <div>
+                    <div style={{ 
+                        padding: "10px", 
+                        background: "#2f3136", 
+                        borderRadius: "5px",
+                        marginTop: "10px",
+                        wordBreak: "break-all",
+                        userSelect: "text",
+                        cursor: "text",
+                        fontFamily: "monospace",
+                        fontSize: "13px"
+                    }}>
+                        {currentToken}
+                    </div>
+                    <button 
+                        onClick={() => {
+                            getToken();
+                            setTimeout(() => window.location.hash = window.location.hash, 100);
+                        }}
+                        style={{
+                            marginTop: "10px",
+                            padding: "8px 16px",
+                            background: "#5865f2",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "5px",
+                            cursor: "pointer"
+                        }}
+                    >
+                        Refresh Token
+                    </button>
                 </div>
             );
         }
@@ -72,16 +125,17 @@ const settings = definePluginSettings({
 
 export default definePlugin({
     name: "GetYourToken",
-    description: "Get your Discord account token from settings",
+    description: "Get your Discord account token",
     authors: [Devs["3Tb"]],
     settings,
 
     start() {
-        console.log("[GetYourToken] Plugin started");
-        getToken();
+        setTimeout(() => {
+            getToken();
+        }, 1000);
     },
 
     stop() {
-        console.log("[GetYourToken] Plugin stopped");
+        currentToken = "Plugin stopped";
     }
 });
