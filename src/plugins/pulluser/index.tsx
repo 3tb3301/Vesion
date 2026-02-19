@@ -27,7 +27,7 @@ const VoiceStateStore: VoiceStateStore = findStoreLazy("VoiceStateStore");
 let pullList: string[] = [];
 let lastMyChannelId: string | null = null;
 let monitorInterval: NodeJS.Timeout | null = null;
-let pullCache = new Map<string, number>(); // userId -> timestamp
+let pullCache = new Map<string, number>();
 
 const settings = definePluginSettings({});
 
@@ -48,20 +48,19 @@ function isPulled(userId: string): boolean {
 
 function addToPullList(userId: string) {
     if (!isPulled(userId)) {
+        const user = UserStore.getUser(userId);
+        if (user?.bot) return;
         pullList.push(userId);
-        console.log("[PullUser] Added:", userId, "Total:", pullList.length);
     }
 }
 
 function removeFromPullList(userId: string) {
     pullList = pullList.filter(id => id !== userId);
-    console.log("[PullUser] Removed:", userId);
 }
 
 function getMyChannelId(): string | null {
     const myId = UserStore.getCurrentUser()?.id;
     if (!myId) return null;
-    
     try {
         const states = VoiceStateStore.getAllVoiceStates();
         for (const users of Object.values(states)) {
@@ -77,14 +76,8 @@ function pullUserInstant(guildId: string, userId: string, targetChannelId: strin
     const now = Date.now();
     const cacheKey = `${userId}-${targetChannelId}`;
     const lastPull = pullCache.get(cacheKey);
-    
-    // Don't pull same user to same channel within 5 seconds (increased from 2)
-    if (lastPull && (now - lastPull) < 5000) {
-        return;
-    }
-    
+    if (lastPull && (now - lastPull) < 5000) return;
     pullCache.set(cacheKey, now);
-    
     RestAPI.patch({
         url: `/guilds/${guildId}/members/${userId}`,
         body: { channel_id: targetChannelId }
@@ -93,38 +86,25 @@ function pullUserInstant(guildId: string, userId: string, targetChannelId: strin
 
 function monitorAndPull() {
     try {
-        // Get my current channel
         const myChannelId = getMyChannelId();
-        
         if (!myChannelId) {
             lastMyChannelId = null;
             return;
         }
-        
-        // Update last known channel
         lastMyChannelId = myChannelId;
-        
         const channel = ChannelStore.getChannel(myChannelId);
         if (!channel || !hasMovePerm(myChannelId)) return;
-        
-        // Get all voice states
         const allStates = VoiceStateStore.getAllVoiceStates();
-        
-        // Pull anyone not in my channel
         for (const userId of pullList) {
             let userChannelId: string | null = null;
-            
             for (const users of Object.values(allStates)) {
                 if (users[userId]?.channelId) {
                     userChannelId = users[userId].channelId;
                     break;
                 }
             }
-            
-            // If user is in a different channel, pull them
             if (userChannelId && userChannelId !== myChannelId) {
                 pullUserInstant(channel.guild_id, userId, myChannelId);
-                console.log("[PullUser] Monitor pulled:", userId);
             }
         }
     } catch {}
@@ -132,25 +112,19 @@ function monitorAndPull() {
 
 function startMonitoring() {
     if (monitorInterval) return;
-    
-    // Check every 1 second to avoid Discord rate limiting
     monitorInterval = setInterval(monitorAndPull, 1000);
-    console.log("[PullUser] Monitoring started (1000ms)");
 }
 
 function stopMonitoring() {
     if (monitorInterval) {
         clearInterval(monitorInterval);
         monitorInterval = null;
-        console.log("[PullUser] Monitoring stopped");
     }
 }
 
 const UserContext: NavContextMenuPatchCallback = (children, { user }) => {
     if (!user || user.id === UserStore.getCurrentUser().id) return;
-    
     const pulled = isPulled(user.id);
-
     children.splice(-1, 0, (
         <Menu.MenuGroup>
             <Menu.MenuItem
@@ -178,13 +152,39 @@ const UserContext: NavContextMenuPatchCallback = (children, { user }) => {
 
 const ChannelContext: NavContextMenuPatchCallback = (children, { channel }) => {
     if (!channel || channel.type !== 2 || !channel.guild_id) return;
-    
-    if (pullList.length === 0) return;
+
+    const myId = UserStore.getCurrentUser()?.id;
+
+    const pullAllItem = (
+        <Menu.MenuItem
+            key="pull-all"
+            id="pull-all"
+            label="Pull All"
+            action={() => {
+                try {
+                    const states = VoiceStateStore.getVoiceStatesForChannel(channel.id);
+                    for (const [userId] of Object.entries(states)) {
+                        if (userId !== myId) addToPullList(userId);
+                    }
+                } catch {}
+            }}
+        />
+    );
+
+    if (pullList.length === 0) {
+        children.splice(-1, 0, (
+            <Menu.MenuGroup>
+                <Menu.MenuItem id="pull-actions" label="Pull Actions">
+                    {pullAllItem}
+                </Menu.MenuItem>
+            </Menu.MenuGroup>
+        ));
+        return;
+    }
 
     const items = pullList.map(userId => {
         const user = UserStore.getUser(userId);
         const name = user?.username || userId;
-        
         return (
             <Menu.MenuItem
                 key={userId}
@@ -219,10 +219,7 @@ const ChannelContext: NavContextMenuPatchCallback = (children, { channel }) => {
                     confirmText: "Remove All",
                     cancelText: "Cancel",
                     confirmColor: "red",
-                    onConfirm: () => {
-                        pullList = [];
-                        console.log("[PullUser] Cleared pull list");
-                    }
+                    onConfirm: () => { pullList = []; }
                 });
             }}
         />
@@ -230,6 +227,7 @@ const ChannelContext: NavContextMenuPatchCallback = (children, { channel }) => {
 
     children.splice(-1, 0, (
         <Menu.MenuGroup>
+            {pullAllItem}
             <Menu.MenuItem id="pull-list" label="Pull List">
                 {items}
             </Menu.MenuItem>
@@ -239,18 +237,16 @@ const ChannelContext: NavContextMenuPatchCallback = (children, { channel }) => {
 
 export default definePlugin({
     name: "PullUser",
-    description: "Drag users with you across voice channels. Right-click users to add them to your pull list - they'll automatically follow you whenever you switch voice channels. Like having your own personal entourage.",
+    description: "Drag users with you across voice channels. Right-click users to add them to your pull list - they'll automatically follow you whenever you switch voice channels.",
     authors: [Devs["3Tb"]],
     settings,
 
     start() {
-        console.log("[PullUser] Starting with aggressive monitoring");
         lastMyChannelId = getMyChannelId();
         startMonitoring();
     },
 
     stop() {
-        console.log("[PullUser] Stopping");
         stopMonitoring();
         pullList = [];
         lastMyChannelId = null;
@@ -265,19 +261,13 @@ export default definePlugin({
     flux: {
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: VoiceState[] }) {
             if (!voiceStates || voiceStates.length === 0) return;
-            
             const myId = UserStore.getCurrentUser()?.id;
             if (!myId) return;
-
             for (const state of voiceStates) {
                 if (state.userId === myId) {
                     const newChannel = state.channelId;
-                    
                     if (newChannel && newChannel !== lastMyChannelId) {
-                        console.log("[PullUser] Flux detected move to:", newChannel);
                         lastMyChannelId = newChannel;
-                        
-                        // Instant pull on flux event
                         monitorAndPull();
                     } else if (!newChannel) {
                         lastMyChannelId = null;
