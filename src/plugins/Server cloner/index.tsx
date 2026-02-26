@@ -708,6 +708,15 @@ async function cloneServer(guild: Guild) {
             .sort((a, b) => a.position - b.position);
 
         const roleIdMap: Record<string, string> = {};
+
+        // Map @everyone role (same name, different ID in new guild)
+        const sourceEveryoneRole = fullRoles.find(r => r.name === "@everyone");
+        const newGuildRoles = GuildRoleStore.getRoles(newGuildId);
+        const newEveryoneRole = newGuildRoles ? Object.values(newGuildRoles).find((r: any) => r.name === "@everyone") : null;
+        if (sourceEveryoneRole && newEveryoneRole) {
+            roleIdMap[sourceEveryoneRole.id] = (newEveryoneRole as any).id;
+        }
+
         let rolesFailed = 0;
         let rolesStored = 0;
 
@@ -776,9 +785,13 @@ async function cloneServer(guild: Guild) {
 
                 if (cat.permissionOverwrites.length > 0) {
                     const mappedOverwrites = cat.permissionOverwrites
-                        .filter(ow => ow.type === 0 && roleIdMap[ow.id])
+                        .filter(ow => {
+                            if (ow.type === 0) return !!roleIdMap[ow.id]; // Role overwrite - must exist in map
+                            if (ow.type === 1) return true; // Member overwrite - keep as-is
+                            return false;
+                        })
                         .map(ow => ({
-                            id: roleIdMap[ow.id],
+                            id: ow.type === 0 ? roleIdMap[ow.id] : ow.id,
                             type: ow.type,
                             allow: ow.allow,
                             deny: ow.deny
@@ -830,9 +843,13 @@ async function cloneServer(guild: Guild) {
 
             if (ch.permissionOverwrites.length > 0) {
                 const mappedOverwrites = ch.permissionOverwrites
-                    .filter(ow => ow.type === 0 && roleIdMap[ow.id])
+                    .filter(ow => {
+                        if (ow.type === 0) return !!roleIdMap[ow.id]; // Role overwrite - must exist in map
+                        if (ow.type === 1) return true; // Member overwrite - keep as-is
+                        return false;
+                    })
                     .map(ow => ({
-                        id: roleIdMap[ow.id],
+                        id: ow.type === 0 ? roleIdMap[ow.id] : ow.id,
                         type: ow.type,
                         allow: ow.allow,
                         deny: ow.deny
