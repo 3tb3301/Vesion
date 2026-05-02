@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { ApplicationCommandInputType, sendBotMessage } from "@api/Commands";
+import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import { Devs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
-import { RestAPI, GuildStore, RelationshipStore, UserStore } from "@webpack/common";
+import { Menu, RestAPI, GuildStore, RelationshipStore, UserStore, ChannelStore } from "@webpack/common";
 
 interface CleanState {
     running: boolean;
@@ -28,6 +28,56 @@ const settings = definePluginSettings({
         type: OptionType.NUMBER,
         description: "Delete delay in milliseconds",
         default: 120,
+    },
+    removeFriends: {
+        type: OptionType.COMPONENT,
+        description: "Remove all friends from your account",
+        component: () => {
+            return (
+                <button
+                    onClick={async () => {
+                        if (!confirm("Are you sure you want to remove ALL friends? This cannot be undone!")) return;
+                        await runRemoveFriends();
+                    }}
+                    style={{
+                        background: "#ed4245",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        padding: "8px 16px",
+                        cursor: "pointer",
+                        fontWeight: "500",
+                    }}
+                >
+                    Remove All Friends
+                </button>
+            );
+        },
+    },
+    cleanAccount: {
+        type: OptionType.COMPONENT,
+        description: "Full account wipe: delete messages, leave servers, remove friends",
+        component: () => {
+            return (
+                <button
+                    onClick={async () => {
+                        if (!confirm("⚠️ WARNING ⚠️\n\nThis will:\n- Delete ALL your messages\n- Leave ALL servers\n- Remove ALL friends\n\nThis CANNOT be undone!\n\nAre you absolutely sure?")) return;
+                        await runCleanAccount();
+                    }}
+                    style={{
+                        background: "#ed4245",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        padding: "8px 16px",
+                        cursor: "pointer",
+                        fontWeight: "500",
+                    }}
+                >
+                    ⚠️ Clean Account ⚠️
+                </button>
+            );
+        },
     },
 });
 
@@ -260,11 +310,13 @@ async function deleteMessagesInChannel(channelId: string, authorId: string) {
     }
 }
 
-async function runDeleteMessages(channelId: string) {
+async function runDeleteMessagesWithUser(userId: string) {
     if (state.running) {
-        sendBotMessage(channelId, { content: "Already running." });
+        alert("Already running.");
         return;
     }
+
+    if (!confirm(`Delete all your messages with this user? This cannot be undone!`)) return;
 
     state.running = true;
     state.startTime = new Date();
@@ -276,28 +328,38 @@ async function runDeleteMessages(channelId: string) {
     createProgressBar();
     updateProgressBar(state.phase, 0, 0);
 
-    const userId = UserStore.getCurrentUser().id;
+    const currentUserId = UserStore.getCurrentUser().id;
 
     try {
-        await deleteMessagesInChannel(channelId, userId);
-        const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        sendBotMessage(channelId, {
-            content: `Deleted ${state.current} messages in ${elapsed}s`,
+        // Create or get DM channel with the user
+        const dmRes = await RestAPI.post({
+            url: "/users/@me/channels",
+            body: { recipient_id: userId },
         });
+        const dmChannel = dmRes.body;
+
+        if (dmChannel?.id) {
+            await deleteMessagesInChannel(dmChannel.id, currentUserId);
+        }
+
+        const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
+        alert(`Deleted ${state.current} messages in ${elapsed}s`);
     } catch (err: any) {
         if (err?.message !== "aborted")
-            sendBotMessage(channelId, { content: `Error: ${err}` });
+            alert(`Error: ${err}`);
     } finally {
         removeProgressBar();
         resetState();
     }
 }
 
-async function runLeaveServers(channelId: string) {
+async function runLeaveAllServers() {
     if (state.running) {
-        sendBotMessage(channelId, { content: "Already running." });
+        alert("Already running.");
         return;
     }
+
+    if (!confirm("Leave ALL servers? This cannot be undone!")) return;
 
     state.running = true;
     state.startTime = new Date();
@@ -323,21 +385,19 @@ async function runLeaveServers(channelId: string) {
         }
 
         const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        sendBotMessage(channelId, {
-            content: `Left ${state.current}/${state.total} servers in ${elapsed}s`,
-        });
+        alert(`Left ${state.current}/${state.total} servers in ${elapsed}s`);
     } catch (err: any) {
         if (err?.message !== "aborted")
-            sendBotMessage(channelId, { content: `Error: ${err}` });
+            alert(`Error: ${err}`);
     } finally {
         removeProgressBar();
         resetState();
     }
 }
 
-async function runRemoveFriends(channelId: string) {
+async function runRemoveFriends() {
     if (state.running) {
-        sendBotMessage(channelId, { content: "Already running." });
+        alert("Already running.");
         return;
     }
 
@@ -365,21 +425,19 @@ async function runRemoveFriends(channelId: string) {
         }
 
         const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        sendBotMessage(channelId, {
-            content: `Removed ${state.current}/${state.total} friends in ${elapsed}s`,
-        });
+        alert(`Removed ${state.current}/${state.total} friends in ${elapsed}s`);
     } catch (err: any) {
         if (err?.message !== "aborted")
-            sendBotMessage(channelId, { content: `Error: ${err}` });
+            alert(`Error: ${err}`);
     } finally {
         removeProgressBar();
         resetState();
     }
 }
 
-async function runCleanAccount(channelId: string) {
+async function runCleanAccount() {
     if (state.running) {
-        sendBotMessage(channelId, { content: "Already running." });
+        alert("Already running.");
         return;
     }
 
@@ -392,7 +450,7 @@ async function runCleanAccount(channelId: string) {
     try {
         const userId = UserStore.getCurrentUser().id;
 
-        
+        // Delete DM messages
         state.phase = "Deleting DM Messages";
         state.current = 0;
         state.total = 0;
@@ -406,7 +464,7 @@ async function runCleanAccount(channelId: string) {
             await deleteMessagesInChannel(ch.id, userId);
         }
 
-        
+        // Clean friends
         if (state.running) {
             const friends = RelationshipStore.getFriendIDs();
             state.phase = "Cleaning Friends";
@@ -418,7 +476,7 @@ async function runCleanAccount(channelId: string) {
                 if (!state.running) break;
 
                 try {
-                    
+                    // Delete messages with friend
                     const dmRes = await RestAPI.post({
                         url: "/users/@me/channels",
                         body: { recipient_id: friendId },
@@ -429,7 +487,7 @@ async function runCleanAccount(channelId: string) {
                         await deleteMessagesInChannel(dmChannel.id, userId);
                     }
 
-                    
+                    // Remove friend
                     await RestAPI.del({ url: `/users/@me/relationships/${friendId}` });
                 } catch {}
 
@@ -439,16 +497,7 @@ async function runCleanAccount(channelId: string) {
             }
         }
 
-        
-        if (state.running) {
-            state.phase = "Deleting Channel Messages";
-            state.current = 0;
-            state.total = 0;
-            updateProgressBar(state.phase, 0, 0);
-            await deleteMessagesInChannel(channelId, userId);
-        }
-
-        
+        // Leave servers
         if (state.running) {
             state.phase = "Leaving Servers";
             state.current = 0;
@@ -468,54 +517,54 @@ async function runCleanAccount(channelId: string) {
         }
 
         const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        sendBotMessage(channelId, { content: `Account cleaned in ${elapsed}s` });
+        alert(`Account cleaned in ${elapsed}s`);
     } catch (err: any) {
         if (err?.message !== "aborted")
-            sendBotMessage(channelId, { content: `Error: ${err}` });
+            alert(`Error: ${err}`);
     } finally {
         removeProgressBar();
         resetState();
     }
 }
 
+// Context menu for DMs (right-click on user)
+const userContextMenuPatch: NavContextMenuPatchCallback = (children, { user }) => {
+    if (!user) return;
+
+    children.push(
+        <Menu.MenuSeparator />,
+        <Menu.MenuItem
+            id="clean-delete-messages"
+            label="Delete My Messages"
+            action={() => runDeleteMessagesWithUser(user.id)}
+            color="danger"
+        />
+    );
+};
+
+// Context menu for guilds (right-click on server)
+const guildContextMenuPatch: NavContextMenuPatchCallback = (children, { guild }) => {
+    if (!guild) return;
+
+    children.push(
+        <Menu.MenuSeparator />,
+        <Menu.MenuItem
+            id="clean-leave-all-servers"
+            label="Leave All Servers"
+            action={() => runLeaveAllServers()}
+            color="danger"
+        />
+    );
+};
+
 export default definePlugin({
     name: "Clean",
-    description: "A powerful account cleanup tool. Delete all your messages, leave all servers, remove all friends, or run a full account wipe with a single command.",
+    description: "A powerful account cleanup tool. Delete messages, leave servers, remove friends from context menus and plugin settings.",
     authors: [Devs["3Tb"]],
     settings,
 
-    commands: [
-        {
-            name: "clean-messages",
-            description: "Delete all your messages in the current channel",
-            inputType: ApplicationCommandInputType.BUILT_IN,
-            execute: async (_, ctx) => {
-                await runDeleteMessages(ctx.channel.id);
-            },
-        },
-        {
-            name: "clean-servers",
-            description: "Leave all servers you are in",
-            inputType: ApplicationCommandInputType.BUILT_IN,
-            execute: async (_, ctx) => {
-                await runLeaveServers(ctx.channel.id);
-            },
-        },
-        {
-            name: "clean-friends",
-            description: "Remove all friends from your account",
-            inputType: ApplicationCommandInputType.BUILT_IN,
-            execute: async (_, ctx) => {
-                await runRemoveFriends(ctx.channel.id);
-            },
-        },
-        {
-            name: "clean-account",
-            description: "Full account wipe: delete messages, leave servers, remove friends",
-            inputType: ApplicationCommandInputType.BUILT_IN,
-            execute: async (_, ctx) => {
-                await runCleanAccount(ctx.channel.id);
-            },
-        },
-    ],
+    contextMenus: {
+        "user-context": userContextMenuPatch,
+        "guild-context": guildContextMenuPatch,
+    },
 });
