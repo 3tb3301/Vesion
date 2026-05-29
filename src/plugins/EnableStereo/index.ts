@@ -23,7 +23,7 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByPropsLazy } from "@webpack";
 import { FluxDispatcher, showToast, Toasts } from "@webpack/common";
 
-const logger = new Logger("edoStereo", "#ff6b6b");
+const logger = new Logger("EnableStereo", "#ff6b6b");
 
 
 
@@ -111,7 +111,7 @@ function enableSpotifyBlocker() {
     }, 500);
 
     logger.info("Spotify Pause Blocker enabled");
-    showToast("edoStereo: Spotify Pause Blocker ON", Toasts.Type.SUCCESS);
+    showToast("EnableStereo: Spotify Pause Blocker ON", Toasts.Type.SUCCESS);
 }
 
 function disableSpotifyBlocker() {
@@ -230,12 +230,12 @@ export default definePlugin({
 
         FluxDispatcher.subscribe("VOICE_CHANNEL_SELECT", this._voiceJoinHandler);
 
-        logger.info("edoStereo started ✓");
+        logger.info("EnableStereo started ✓");
     },
 
     stop() {
         FluxDispatcher.unsubscribe("VOICE_CHANNEL_SELECT", this._voiceJoinHandler);
         disableSpotifyBlocker();
-        logger.info("edoStereo stopped");
+        logger.info("EnableStereo stopped");
     },
 });
