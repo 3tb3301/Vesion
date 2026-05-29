@@ -203,7 +203,7 @@ export default definePlugin({
             ) {
                 if (settings.store.enableToasts) {
                     showToast(
-                        "edoStereo: Disable Echo Cancellation & Noise Suppression for best quality!",
+                        "EnableStereo: Disable Echo Cancellation & Noise Suppression for best quality!",
                         Toasts.Type.FAILURE
                     );
                 }
@@ -223,7 +223,7 @@ export default definePlugin({
             const ch = settings.store.stereoChannelOption ?? "2.0";
             const br = Number(settings.store.bitrateOption ?? 384000) / 1000;
             showToast(
-                `edoStereo: ${ch}ch · ${br}kbps · FEC ${settings.store.disableFEC ? "OFF" : "ON"}`,
+                `EnableStereo: ${ch}ch · ${br}kbps · FEC ${settings.store.disableFEC ? "OFF" : "ON"}`,
                 Toasts.Type.MESSAGE
             );
         };
