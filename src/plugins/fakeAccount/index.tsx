@@ -284,6 +284,19 @@ function addToSwitcher(userId: string) {
     _store?.emitChange?.();
 }
 
+function removeFromSwitcher(userId: string) {
+    const idx = fakeAccounts.findIndex(f => f.id === userId);
+    if (idx === -1) return;
+
+    if (activeFakeId === userId) {
+        restoreRealAccount();
+    }
+
+    fakeAccounts.splice(idx, 1);
+    DataStore.set(DS_KEY, fakeAccounts.map(f => f.id));
+    _store?.emitChange?.();
+}
+
 // ── UI: Restore Button (injected directly into the DOM, no HeaderBar API needed) ──
 let restoreBtnEl: HTMLDivElement | null = null;
 let restoreObserver: MutationObserver | null = null;
@@ -352,17 +365,38 @@ function FakeAccountIcon() {
     );
 }
 
+function FakeAccountRemoveIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+            <path d="M4 4L20 20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+    );
+}
+
 const ctxPatch: NavContextMenuPatchCallback = (children, { user }) => {
     if (!children || !Array.isArray(children)) return;
     try {
         if (!user || user.id === UserStore.getCurrentUser()?.id) return;
+
+        const isInSwitcher = fakeAccounts.some(f => f.id === user.id);
+
         children.push(
-            <Menu.MenuItem
-                id="fake-account-add"
-                label="Add to Switcher (Fake)"
-                icon={FakeAccountIcon}
-                action={() => addToSwitcher(user.id)}
-            />
+            isInSwitcher ? (
+                <Menu.MenuItem
+                    id="fake-account-remove"
+                    label="Remove from Switcher (Fake)"
+                    icon={FakeAccountRemoveIcon}
+                    action={() => removeFromSwitcher(user.id)}
+                />
+            ) : (
+                <Menu.MenuItem
+                    id="fake-account-add"
+                    label="Add to Switcher (Fake)"
+                    icon={FakeAccountIcon}
+                    action={() => addToSwitcher(user.id)}
+                />
+            )
         );
     } catch (e) {
         console.error("[FakeAccount] Context menu patch error:", e);
