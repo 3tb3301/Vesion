@@ -8,7 +8,8 @@ import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import { Devs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
-import { Menu, RestAPI, GuildStore, RelationshipStore, UserStore, ChannelStore } from "@webpack/common";
+import { Menu, RestAPI, GuildStore, RelationshipStore, UserStore } from "@webpack/common";
+import "./styles.css";
 
 interface CleanState {
     running: boolean;
@@ -61,7 +62,7 @@ const settings = definePluginSettings({
             return (
                 <button
                     onClick={async () => {
-                        if (!confirm("⚠️ WARNING ⚠️\n\nThis will:\n- Delete ALL your messages\n- Leave ALL servers\n- Remove ALL friends\n\nThis CANNOT be undone!\n\nAre you absolutely sure?")) return;
+                        if (!confirm("WARNING\n\nThis will:\n- Delete ALL your messages\n- Leave ALL servers\n- Remove ALL friends\n\nThis CANNOT be undone!\n\nAre you absolutely sure?")) return;
                         await runCleanAccount();
                     }}
                     style={{
@@ -74,7 +75,7 @@ const settings = definePluginSettings({
                         fontWeight: "500",
                     }}
                 >
-                    ⚠️ Clean Account ⚠️
+                    Clean Account
                 </button>
             );
         },
@@ -117,101 +118,142 @@ function wait(ms: number) {
     });
 }
 
-let progressBarEl: HTMLDivElement | null = null;
+let pillContainer: HTMLDivElement | null = null;
+let mainPill: HTMLDivElement | null = null;
+let isHiding = false;
 
-function createProgressBar() {
-    if (progressBarEl) return;
+function createPillContainer() {
+    if (pillContainer) return;
 
     const container = document.createElement("div");
-    container.id = "clean-progress-bar";
-    container.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        z-index: 99999;
-        background: #1e1f22;
-        padding: 8px 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    container.className = "cloner-pill-container";
+    container.id = "clean-pill-container";
+    document.body.appendChild(container);
+    pillContainer = container;
+}
+
+function createMainPill() {
+    if (mainPill) return;
+
+    const pill = document.createElement("div");
+    pill.className = "cloner-pill";
+    pill.id = "clean-main-pill";
+    pill.innerHTML = `
+        <div class="cloner-pill-compact">
+            <div class="cloner-pill-spinner"></div>
+            <span class="cloner-pill-title">Initializing...</span>
+            <span class="cloner-pill-percent">0%</span>
+        </div>
+        <div class="cloner-pill-expanded">
+            <div class="cloner-pill-expanded-inner">
+                <div class="cloner-pill-body"></div>
+                <div class="cloner-pill-progress-bar">
+                    <div class="cloner-pill-progress-fill" style="width:0%"></div>
+                </div>
+                <div class="cloner-pill-actions">
+                    <button class="cloner-btn danger" id="clean-stop-btn">Stop</button>
+                </div>
+            </div>
+        </div>
     `;
 
-    const top = document.createElement("div");
-    top.style.cssText = `
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    `;
-
-    const label = document.createElement("div");
-    label.id = "clean-progress-label";
-    label.style.cssText = `
-        color: #fff;
-        font-size: 12px;
-        font-family: monospace;
-    `;
-
-    const stopBtn = document.createElement("button");
-    stopBtn.textContent = "Stop";
-    stopBtn.style.cssText = `
-        background: #ed4245;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        padding: 2px 10px;
-        font-size: 12px;
-        font-family: monospace;
-        cursor: pointer;
-    `;
+    const stopBtn = pill.querySelector("#clean-stop-btn") as HTMLButtonElement;
     stopBtn.onclick = () => {
         resetState();
-        removeProgressBar();
+        hidePill();
     };
 
-    const barBg = document.createElement("div");
-    barBg.style.cssText = `
-        width: 100%;
-        height: 6px;
-        background: #313338;
-        border-radius: 4px;
-        overflow: hidden;
-    `;
-
-    const barFill = document.createElement("div");
-    barFill.id = "clean-progress-fill";
-    barFill.style.cssText = `
-        height: 100%;
-        width: 0%;
-        background: #5865f2;
-        border-radius: 4px;
-        transition: width 0.2s ease;
-    `;
-
-    barBg.appendChild(barFill);
-    top.appendChild(label);
-    top.appendChild(stopBtn);
-    container.appendChild(top);
-    container.appendChild(barBg);
-    document.body.appendChild(container);
-    progressBarEl = container;
+    pillContainer!.appendChild(pill);
+    mainPill = pill;
 }
 
-function updateProgressBar(phase: string, current: number, total: number) {
-    const label = document.getElementById("clean-progress-label");
-    const fill = document.getElementById("clean-progress-fill");
-    if (!label || !fill) return;
+function updateMainPill(phase: string, current: number, total: number, body?: string) {
+    if (!mainPill) return;
+
+    const title = mainPill.querySelector(".cloner-pill-title") as HTMLElement;
+    const percent = mainPill.querySelector(".cloner-pill-percent") as HTMLElement;
+    const fill = mainPill.querySelector(".cloner-pill-progress-fill") as HTMLElement;
+    const bodyEl = mainPill.querySelector(".cloner-pill-body") as HTMLElement;
 
     const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-    label.textContent = `[${phase}] ${current}/${total} (${pct}%)`;
+    
+    title.textContent = phase;
+    percent.textContent = `${pct}%`;
     fill.style.width = `${pct}%`;
+    
+    if (body) {
+        bodyEl.textContent = body;
+    } else {
+        bodyEl.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} items`;
+    }
+
+    if (phase === "Completed") {
+        mainPill.classList.add("success", "completed");
+        mainPill.classList.remove("error");
+        const spinner = mainPill.querySelector(".cloner-pill-spinner") as HTMLElement;
+        if (spinner) spinner.style.animation = "none";
+    } else if (phase === "Error") {
+        mainPill.classList.add("error", "completed");
+        mainPill.classList.remove("success");
+        const spinner = mainPill.querySelector(".cloner-pill-spinner") as HTMLElement;
+        if (spinner) spinner.style.animation = "none";
+    } else {
+        mainPill.classList.remove("success", "error", "completed");
+    }
 }
 
-function removeProgressBar() {
-    const el = document.getElementById("clean-progress-bar");
-    if (el) el.remove();
-    progressBarEl = null;
+function addSubPill(title: string, body: string, icon: "success" | "error" | "info" = "info") {
+    if (!pillContainer) return;
+
+    const subPill = document.createElement("div");
+    subPill.className = "cloner-sub-pill";
+    
+    const iconSymbol = icon === "success" ? "✓" : icon === "error" ? "✕" : "ℹ";
+    
+    subPill.innerHTML = `
+        <div class="cloner-sub-pill-icon ${icon}">${iconSymbol}</div>
+        <div class="cloner-sub-pill-content">
+            <span class="cloner-sub-pill-title">${title}</span>
+            <span class="cloner-sub-pill-body">${body}</span>
+        </div>
+    `;
+
+    pillContainer.appendChild(subPill);
+
+    setTimeout(() => {
+        subPill.classList.add("hiding");
+        setTimeout(() => subPill.remove(), 500);
+    }, 5000);
+}
+
+function hidePill() {
+    if (!mainPill || isHiding) return;
+    isHiding = true;
+    mainPill.classList.add("hiding");
+    
+    setTimeout(() => {
+        if (mainPill) {
+            mainPill.remove();
+            mainPill = null;
+        }
+        isHiding = false;
+        if (pillContainer) {
+            pillContainer.querySelectorAll(".cloner-sub-pill").forEach(el => el.remove());
+            if (pillContainer.children.length === 0) {
+                pillContainer.remove();
+                pillContainer = null;
+            }
+        }
+    }, 800);
+}
+
+function initPillUI(phase: string, total: number, body?: string) {
+    createPillContainer();
+    createMainPill();
+    state.current = 0;
+    state.total = total;
+    state.phase = phase;
+    updateMainPill(phase, 0, total, body);
 }
 
 async function searchMessages(channelId: string, authorId: string, offset: number = 0) {
@@ -244,7 +286,7 @@ async function deleteMessage(channelId: string, messageId: string) {
         try {
             await RestAPI.del({ url: `/channels/${channelId}/messages/${messageId}` });
             state.current++;
-            updateProgressBar(state.phase, state.current, state.total);
+            updateMainPill(state.phase, state.current, state.total);
             return true;
         } catch (err: any) {
             const status = err?.status ?? err?.response?.status;
@@ -297,7 +339,7 @@ async function deleteMessagesInChannel(channelId: string, authorId: string) {
 
         if (result.total_results) {
             state.total = Math.max(state.total, state.current + result.total_results);
-            updateProgressBar(state.phase, state.current, state.total);
+            updateMainPill(state.phase, state.current, state.total);
         }
 
         for (const msg of messages) {
@@ -322,16 +364,14 @@ async function runDeleteMessagesWithUser(userId: string) {
     state.startTime = new Date();
     state.current = 0;
     state.total = 0;
-    state.phase = "Deleting Messages";
+    state.phase = "Initializing";
     abortController = new AbortController();
 
-    createProgressBar();
-    updateProgressBar(state.phase, 0, 0);
+    initPillUI("Initializing", 0, "Preparing to delete messages...");
 
     const currentUserId = UserStore.getCurrentUser().id;
 
     try {
-        // Create or get DM channel with the user
         const dmRes = await RestAPI.post({
             url: "/users/@me/channels",
             body: { recipient_id: userId },
@@ -339,17 +379,29 @@ async function runDeleteMessagesWithUser(userId: string) {
         const dmChannel = dmRes.body;
 
         if (dmChannel?.id) {
+            state.phase = "Deleting Messages";
+            state.total = 0;
+            updateMainPill(state.phase, 0, 0, "Searching for messages...");
             await deleteMessagesInChannel(dmChannel.id, currentUserId);
         }
 
         const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        alert(`Deleted ${state.current} messages in ${elapsed}s`);
+        state.phase = "Completed";
+        updateMainPill(state.phase, state.current, state.total, `Deleted ${state.current} messages in ${elapsed}s`);
+        addSubPill("Messages Deleted", `Deleted ${state.current} messages with user in ${elapsed}s`, "success");
+        
+        setTimeout(() => hidePill(), 3000);
     } catch (err: any) {
-        if (err?.message !== "aborted")
-            alert(`Error: ${err}`);
+        if (err?.message !== "aborted") {
+            state.phase = "Error";
+            updateMainPill(state.phase, state.current, state.total, `Error: ${err}`);
+            addSubPill("Error", `Failed to delete messages: ${err}`, "error");
+        }
     } finally {
-        removeProgressBar();
-        resetState();
+        if (state.running) {
+            state.running = false;
+            resetState();
+        }
     }
 }
 
@@ -370,28 +422,44 @@ async function runLeaveAllServers() {
     const guilds = Object.keys(GuildStore.getGuilds());
     state.total = guilds.length;
 
-    createProgressBar();
-    updateProgressBar(state.phase, 0, state.total);
+    initPillUI(state.phase, state.total, `Leaving ${guilds.length} servers...`);
 
     try {
+        let failed = 0;
         for (const guildId of guilds) {
             if (!state.running) break;
             try {
                 await RestAPI.del({ url: `/users/@me/guilds/${guildId}` });
-            } catch {}
+            } catch {
+                failed++;
+            }
             state.current++;
-            updateProgressBar(state.phase, state.current, state.total);
+            updateMainPill(state.phase, state.current, state.total);
             await wait(500);
         }
 
         const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        alert(`Left ${state.current}/${state.total} servers in ${elapsed}s`);
+        state.phase = "Completed";
+        updateMainPill(state.phase, state.current, state.total, `Left ${state.current - failed}/${state.total} servers in ${elapsed}s`);
+        
+        if (failed > 0) {
+            addSubPill("Partial Success", `Left ${state.current - failed}/${state.total} servers (${failed} failed)`, "info");
+        } else {
+            addSubPill("Servers Left", `Successfully left ${state.current} servers in ${elapsed}s`, "success");
+        }
+        
+        setTimeout(() => hidePill(), 3000);
     } catch (err: any) {
-        if (err?.message !== "aborted")
-            alert(`Error: ${err}`);
+        if (err?.message !== "aborted") {
+            state.phase = "Error";
+            updateMainPill(state.phase, state.current, state.total, `Error: ${err}`);
+            addSubPill("Error", `Failed to leave servers: ${err}`, "error");
+        }
     } finally {
-        removeProgressBar();
-        resetState();
+        if (state.running) {
+            state.running = false;
+            resetState();
+        }
     }
 }
 
@@ -410,28 +478,44 @@ async function runRemoveFriends() {
     const friends = RelationshipStore.getFriendIDs();
     state.total = friends.length;
 
-    createProgressBar();
-    updateProgressBar(state.phase, 0, state.total);
+    initPillUI(state.phase, state.total, `Removing ${friends.length} friends...`);
 
     try {
+        let failed = 0;
         for (const userId of friends) {
             if (!state.running) break;
             try {
                 await RestAPI.del({ url: `/users/@me/relationships/${userId}` });
-            } catch {}
+            } catch {
+                failed++;
+            }
             state.current++;
-            updateProgressBar(state.phase, state.current, state.total);
+            updateMainPill(state.phase, state.current, state.total);
             await wait(300);
         }
 
         const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        alert(`Removed ${state.current}/${state.total} friends in ${elapsed}s`);
+        state.phase = "Completed";
+        updateMainPill(state.phase, state.current, state.total, `Removed ${state.current - failed}/${state.total} friends in ${elapsed}s`);
+        
+        if (failed > 0) {
+            addSubPill("Partial Success", `Removed ${state.current - failed}/${state.total} friends (${failed} failed)`, "info");
+        } else {
+            addSubPill("Friends Removed", `Successfully removed ${state.current} friends in ${elapsed}s`, "success");
+        }
+        
+        setTimeout(() => hidePill(), 3000);
     } catch (err: any) {
-        if (err?.message !== "aborted")
-            alert(`Error: ${err}`);
+        if (err?.message !== "aborted") {
+            state.phase = "Error";
+            updateMainPill(state.phase, state.current, state.total, `Error: ${err}`);
+            addSubPill("Error", `Failed to remove friends: ${err}`, "error");
+        }
     } finally {
-        removeProgressBar();
-        resetState();
+        if (state.running) {
+            state.running = false;
+            resetState();
+        }
     }
 }
 
@@ -445,38 +529,42 @@ async function runCleanAccount() {
     state.startTime = new Date();
     abortController = new AbortController();
 
-    createProgressBar();
+    initPillUI("Cleaning Account", 0, "Starting full account cleanup...");
 
     try {
         const userId = UserStore.getCurrentUser().id;
 
-        // Delete DM messages
         state.phase = "Deleting DM Messages";
         state.current = 0;
         state.total = 0;
-        updateProgressBar(state.phase, 0, 0);
+        updateMainPill(state.phase, 0, 0, "Fetching DM channels...");
 
         const dmChannels = await RestAPI.get({ url: "/users/@me/channels" });
         const channels: any[] = dmChannels.body || [];
+        let totalDMs = channels.length;
+        let currentDM = 0;
 
         for (const ch of channels) {
             if (!state.running) break;
+            currentDM++;
+            updateMainPill(state.phase, currentDM, totalDMs, `Processing DM ${currentDM}/${totalDMs}...`);
             await deleteMessagesInChannel(ch.id, userId);
         }
 
-        // Clean friends
+        addSubPill("DM Messages Deleted", `Cleaned all DM messages`, "success");
+
         if (state.running) {
             const friends = RelationshipStore.getFriendIDs();
             state.phase = "Cleaning Friends";
             state.current = 0;
             state.total = friends.length;
-            updateProgressBar(state.phase, 0, state.total);
+            updateMainPill(state.phase, 0, state.total, `Cleaning ${friends.length} friends...`);
 
+            let friendsCleaned = 0;
             for (const friendId of friends) {
                 if (!state.running) break;
 
                 try {
-                    // Delete messages with friend
                     const dmRes = await RestAPI.post({
                         url: "/users/@me/channels",
                         body: { recipient_id: friendId },
@@ -487,47 +575,60 @@ async function runCleanAccount() {
                         await deleteMessagesInChannel(dmChannel.id, userId);
                     }
 
-                    // Remove friend
                     await RestAPI.del({ url: `/users/@me/relationships/${friendId}` });
+                    friendsCleaned++;
                 } catch {}
 
                 state.current++;
-                updateProgressBar(state.phase, state.current, state.total);
+                updateMainPill(state.phase, state.current, state.total);
                 await wait(300);
             }
+
+            addSubPill("Friends Cleaned", `Cleaned ${friendsCleaned}/${friends.length} friends`, "success");
         }
 
-        // Leave servers
         if (state.running) {
             state.phase = "Leaving Servers";
             state.current = 0;
             const guilds = Object.keys(GuildStore.getGuilds());
             state.total = guilds.length;
-            updateProgressBar(state.phase, 0, state.total);
+            updateMainPill(state.phase, 0, state.total, `Leaving ${guilds.length} servers...`);
 
+            let serversLeft = 0;
             for (const guildId of guilds) {
                 if (!state.running) break;
                 try {
                     await RestAPI.del({ url: `/users/@me/guilds/${guildId}` });
+                    serversLeft++;
                 } catch {}
                 state.current++;
-                updateProgressBar(state.phase, state.current, state.total);
+                updateMainPill(state.phase, state.current, state.total);
                 await wait(500);
             }
+
+            addSubPill("Servers Left", `Left ${serversLeft}/${guilds.length} servers`, "success");
         }
 
         const elapsed = Math.round((Date.now() - (state.startTime?.getTime() ?? Date.now())) / 1000);
-        alert(`Account cleaned in ${elapsed}s`);
+        state.phase = "Completed";
+        updateMainPill(state.phase, state.current, state.total, `Account cleaned in ${elapsed}s`);
+        addSubPill("Clean Complete", `Account fully cleaned in ${elapsed}s`, "success");
+        
+        setTimeout(() => hidePill(), 3000);
     } catch (err: any) {
-        if (err?.message !== "aborted")
-            alert(`Error: ${err}`);
+        if (err?.message !== "aborted") {
+            state.phase = "Error";
+            updateMainPill(state.phase, state.current, state.total, `Error: ${err}`);
+            addSubPill("Error", `Failed to clean account: ${err}`, "error");
+        }
     } finally {
-        removeProgressBar();
-        resetState();
+        if (state.running) {
+            state.running = false;
+            resetState();
+        }
     }
 }
 
-// Context menu for DMs (right-click on user)
 const userContextMenuPatch: NavContextMenuPatchCallback = (children, { user }) => {
     if (!user) return;
 
@@ -542,7 +643,6 @@ const userContextMenuPatch: NavContextMenuPatchCallback = (children, { user }) =
     );
 };
 
-// Context menu for guilds (right-click on server)
 const guildContextMenuPatch: NavContextMenuPatchCallback = (children, { guild }) => {
     if (!guild) return;
 
