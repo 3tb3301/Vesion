@@ -18,7 +18,6 @@ import {
     PermissionsBits,
     PermissionStore,
     React,
-    RestAPI,
     SelectedChannelStore,
     Toasts,
     UserStore
@@ -93,21 +92,6 @@ function UnfollowIcon(props: IconProps) {
     );
 }
 
-function ReverseFollowIcon(props: IconProps) {
-    return (
-        <Icon
-            {...props}
-            className={classes(props.className, "vc-reverse-follow-icon")}
-            viewBox="0 -960 960 960"
-        >
-            <path
-                fill="currentColor"
-                d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm-40-120v-160h-160v-80h160v-160h80v160h160v80H520v160h-80Z"
-            />
-        </Icon>
-    );
-}
-
 interface VoiceState {
     userId: string;
     channelId?: string;
@@ -152,14 +136,7 @@ export const settings = definePluginSettings({
         type: OptionType.STRING,
         description: "Followed User ID",
         restartNeeded: false,
-        hidden: true, 
-        default: "",
-    },
-    reverseFollowUserIds: {
-        type: OptionType.STRING,
-        description: "Reverse Followed User IDs (comma separated)",
-        restartNeeded: false,
-        hidden: true, 
+        hidden: true,
         default: "",
     },
     channelFull: {
@@ -206,131 +183,6 @@ function getChannelId(userId: string) {
         }
     } catch (e) { }
     return null;
-}
-
-function getGuildIdFromChannel(channelId: string) {
-    try {
-        const channel = ChannelStore.getChannel(channelId);
-        return channel?.guild_id ?? null;
-    } catch (e) {
-        return null;
-    }
-}
-
-
-let myPreviousVoiceChannelId: string | null = null;
-let lastReverseFollowUserIds: string = "";
-
-
-function getReverseFollowUserIds(): string[] {
-    const ids = settings.store.reverseFollowUserIds;
-    return ids ? ids.split(",").filter(id => id.length > 0) : [];
-}
-
-function addReverseFollowUserId(userId: string) {
-    const ids = getReverseFollowUserIds();
-    if (!ids.includes(userId)) {
-        ids.push(userId);
-        settings.store.reverseFollowUserIds = ids.join(",");
-    }
-}
-
-function removeReverseFollowUserId(userId: string) {
-    const ids = getReverseFollowUserIds();
-    const filtered = ids.filter(id => id !== userId);
-    settings.store.reverseFollowUserIds = filtered.join(",");
-}
-
-function isReverseFollowing(userId: string): boolean {
-    return getReverseFollowUserIds().includes(userId);
-}
-
-async function moveUserToChannel(userId: string, targetChannelId: string, guildId: string) {
-    try {
-        const channel = ChannelStore.getChannel(targetChannelId);
-        
- 
-        const hasPermission = PermissionStore.can(PermissionsBits.MOVE_MEMBERS, channel);
-        
-        if (!hasPermission) {
-            Toasts.show({
-                message: "You don't have permission to move members in this server",
-                id: Toasts.genId(),
-                type: Toasts.Type.FAILURE
-            });
-            return false;
-        }
-
-        
-        const response = await RestAPI.patch({
-            url: `/guilds/${guildId}/members/${userId}`,
-            body: {
-                channel_id: targetChannelId
-            }
-        });
-
-            if (response.ok) {
-                const user = UserStore.getUser(userId);
-                Toasts.show({
-                    message: ` Purify: Successfully pulled ${user.username} to your channel`,
-                    id: Toasts.genId(),
-                    type: Toasts.Type.SUCCESS
-                });
-                return true;
-            } else {
-            const user = UserStore.getUser(userId);
-            const errorText = response.body?.message || response.text || `${response.status}`;
-            Toasts.show({
-                message: `❌ Purify: Failed to pull ${user.username}: ${errorText}`,
-                id: Toasts.genId(),
-                type: Toasts.Type.FAILURE
-            });
-            return false;
-        }
-    } catch (error) {
-        Toasts.show({
-            message: `❌ Purify: Error pulling user: ${error}`,
-            id: Toasts.genId(),
-            type: Toasts.Type.FAILURE
-        });
-        return false;
-    }
-}
-
-async function triggerReverseFollow() {
-    const userIds = getReverseFollowUserIds();
-    if (userIds.length > 0) {
-        const myChannelId = SelectedChannelStore.getVoiceChannelId();
-        if (myChannelId) {
-            const myGuildId = getGuildIdFromChannel(myChannelId);
-            
-            for (const userId of userIds) {
-                const userChannelId = getChannelId(userId);
-                
-                if (userChannelId) {
-                    if (userChannelId === myChannelId) {
-                        continue;
-                    }
-                    
-                    // Get guild ID from the user's current channel
-                    const guildId = getGuildIdFromChannel(userChannelId);
-                    
-                    if (guildId !== myGuildId) {
-                        continue;
-                    }
-                    
-                    // Try to move the user to your channel
-                    await moveUserToChannel(userId, myChannelId, guildId);
-                }
-            }
-        } else {
-            Toasts.show({
-                message: "You need to be in a voice channel first",
-                id: Toasts.genId(),
-                type: Toasts.Type.FAILURE
-            });
-        }
-    }
 }
 
 function triggerFollow(userChannelId: string | null = getChannelId(settings.store.followUserId)) {
@@ -408,14 +260,6 @@ function toggleFollow(userId: string) {
     }
 }
 
-function toggleReverseFollow(userId: string) {
-    if (isReverseFollowing(userId)) {
-        removeReverseFollowUserId(userId);
-    } else {
-        addReverseFollowUserId(userId);
-    }
-}
-
 interface UserContextProps {
     channel: Channel;
     guildId?: string;
@@ -425,11 +269,8 @@ interface UserContextProps {
 const UserContext: NavContextMenuPatchCallback = (children, { user }: UserContextProps) => {
     if (!user || user.id === UserStore.getCurrentUser().id) return;
     const isFollowed = settings.store.followUserId === user.id;
-    const isReverseFollowed = isReverseFollowing(user.id);
     const followLabel = isFollowed ? "Unfollow User" : "Follow User";
-    const reverseFollowLabel = isReverseFollowed ? "✓ فك الحبل" : " اربط الحبل";
     const followIcon = isFollowed ? UnfollowIcon : FollowIcon;
-    const reverseFollowIcon = isReverseFollowed ? UnfollowIcon : ReverseFollowIcon;
 
     children.splice(-1, 0, (
         <Menu.MenuGroup>
@@ -439,73 +280,16 @@ const UserContext: NavContextMenuPatchCallback = (children, { user }: UserContex
                 action={() => toggleFollow(user.id)}
                 icon={followIcon}
             />
-            <Menu.MenuItem
-                id="reverse-follow-user"
-                label={reverseFollowLabel}
-                action={() => toggleReverseFollow(user.id)}
-                icon={reverseFollowIcon}
-            />
         </Menu.MenuGroup>
     ));
 };
 
 export default definePlugin({
     name: "FollowUser",
-    description: "Adds follow and reverse follow options in the user context menu to always be in the same VC as them or pull them to your VC. Shortcuts: Ctrl+Shift+R (clear list), Ctrl+Shift+T (trigger pull) | Enhanced by Purify",
+    description: "Adds a follow option in the user context menu to always be in the same VC as them.",
     authors: [{ name: "3TB", id: 298055455614173184n }],
 
     settings,
-    
-    start() {
-        
-        document.addEventListener("keydown", this.handleKeyPress);
-    },
-    
-    stop() {
-        document.removeEventListener("keydown", this.handleKeyPress);
-    },
-    
-    handleKeyPress(event: KeyboardEvent) {
-       
-        if (event.ctrlKey && event.shiftKey) {
-            event.preventDefault();
-            const userIds = getReverseFollowUserIds();
-            if (userIds.length > 0) {
-                settings.store.reverseFollowUserIds = "";
-                Toasts.show({
-                    message: `Purify: Cleared ${userIds.length} user${userIds.length > 1 ? "s" : ""} from Reverse Follow list`,
-                    id: Toasts.genId(),
-                    type: Toasts.Type.SUCCESS
-                });
-            } else {
-                Toasts.show({
-                    message: "ℹ Purify: Reverse Follow list is already empty",
-                    id: Toasts.genId(),
-                    type: Toasts.Type.INFO
-                });
-            }
-        }
-        
-       
-        if (event.shiftKey && event.key === "T") {
-            event.preventDefault();
-            const userIds = getReverseFollowUserIds();
-            if (userIds.length > 0) {
-                triggerReverseFollow();
-                Toasts.show({
-                    message: ` Purify: Pulling ${userIds.length} user${userIds.length > 1 ? "s" : ""} to your channel...`,
-                    id: Toasts.genId(),
-                    type: Toasts.Type.INFO
-                });
-            } else {
-                Toasts.show({
-                    message: " Purify: No users in Reverse Follow list",
-                    id: Toasts.genId(),
-                    type: Toasts.Type.FAILURE
-                });
-            }
-        }
-    },
 
     patches: [
         {
@@ -524,74 +308,23 @@ export default definePlugin({
     flux: {
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: VoiceState[]; }) {
             const currentUserId = UserStore.getCurrentUser().id;
-            const myCurrentVoiceChannelId = SelectedChannelStore.getVoiceChannelId();
-            
-            // Check if the reverse follow users changed - reset tracking if so
-            if (settings.store.reverseFollowUserIds !== lastReverseFollowUserIds) {
-                lastReverseFollowUserIds = settings.store.reverseFollowUserIds;
-                myPreviousVoiceChannelId = myCurrentVoiceChannelId;
-            }
-            
-            // Check if I changed voice channels
-            if (myCurrentVoiceChannelId !== myPreviousVoiceChannelId) {
-                const reverseFollowUserIds = getReverseFollowUserIds();
-                
-                // Handle reverse follow - when I move to a new channel, pull all reverse followed users with me
-                if (reverseFollowUserIds.length > 0 && myCurrentVoiceChannelId) {
-                    const myGuildId = getGuildIdFromChannel(myCurrentVoiceChannelId);
-                    
-                    for (const userId of reverseFollowUserIds) {
-                        const reverseFollowedUserChannelId = getChannelId(userId);
-                        
-                       
-                        if (reverseFollowedUserChannelId && reverseFollowedUserChannelId !== myCurrentVoiceChannelId) {
-                            const userGuildId = getGuildIdFromChannel(reverseFollowedUserChannelId);
-                            
-                         
-                            if (myGuildId && myGuildId === userGuildId) {
-                                moveUserToChannel(userId, myCurrentVoiceChannelId, myGuildId);
-                            }
-                        }
-                    }
-                }
-                
-              
-                myPreviousVoiceChannelId = myCurrentVoiceChannelId;
-            }
-            
+
             for (const { userId, channelId, oldChannelId } of voiceStates) {
                 if (channelId !== oldChannelId) {
                     const isMe = userId === currentUserId;
-                    
-                    const isReverseFollowed = isReverseFollowing(userId);
-                    
-                  
-                    if (isReverseFollowed && channelId && !isMe) {
-                        const myChannelId = SelectedChannelStore.getVoiceChannelId();
-                        if (myChannelId && myChannelId !== channelId) {
-                            const guildId = getGuildIdFromChannel(myChannelId);
-                            const userGuildId = getGuildIdFromChannel(channelId);
-                            
-                           
-                            if (guildId && guildId === userGuildId) {
-                                moveUserToChannel(userId, myChannelId, guildId);
-                            }
-                        }
-                        continue;
-                    }
-                    
-                  
+
+
                     if (settings.store.onlyManualTrigger || !settings.store.followUserId) {
                         continue;
                     }
-                    
-                  
+
+
                     if (settings.store.autoMoveBack && isMe && channelId && oldChannelId) {
                         triggerFollow();
                         continue;
                     }
 
-                   
+
                     if (settings.store.channelFull && !isMe && !channelId && oldChannelId && oldChannelId !== SelectedChannelStore.getVoiceChannelId()) {
                         const channel = ChannelStore.getChannel(oldChannelId);
                         const channelVoiceStates = VoiceStateStore.getVoiceStatesForChannel(oldChannelId);
@@ -611,10 +344,10 @@ export default definePlugin({
                     }
 
                     if (channelId) {
-                       
+
                         triggerFollow(channelId);
                     } else if (oldChannelId) {
-                        
+
                         triggerFollow(null);
                     }
                 }
@@ -623,68 +356,23 @@ export default definePlugin({
     },
 
     FollowIndicator() {
-        const { plugins: { FollowUser: { followUserId, reverseFollowUserIds } } } = useSettings(["plugins.FollowUser.followUserId", "plugins.FollowUser.reverseFollowUserIds"]);
-        
-        const indicators: React.ReactNode[] = [];
-        
-        if (followUserId) {
-            indicators.push(
-                <HeaderBarIcon
-                    key="follow-indicator"
-                    tooltip={`Following ${UserStore.getUser(followUserId).username} (click to trigger manually, right-click to unfollow)`}
-                    icon={UnfollowIcon}
-                    onClick={() => {
-                        triggerFollow();
-                    }}
-                    onContextMenu={() => {
-                        settings.store.followUserId = "";
-                    }}
-                />
-            );
-        }
-        
-        const reverseFollowIds = getReverseFollowUserIds();
-        if (reverseFollowIds.length > 0) {
-            const usernames = reverseFollowIds.map(id => {
-                try {
-                    return UserStore.getUser(id).username;
-                } catch {
-                    return id;
-                }
-            }).join(", ");
-            
-            indicators.push(
-                <HeaderBarIcon
-                    key="reverse-follow-indicator"
-                    tooltip={`[Purify's Multi-User Reverse Follow] ${reverseFollowIds.length} user${reverseFollowIds.length > 1 ? "s" : ""}: ${usernames} | Click to pull, Right-click to clear | Ctrl+Shift+T to pull, Ctrl+Shift+R to clear`}
-                    icon={ReverseFollowIcon}
-                    onClick={() => {
-                        triggerReverseFollow();
-                    }}
-                    onContextMenu={() => {
-                        settings.store.reverseFollowUserIds = "";
-                    }}
-                />
-            );
-        } else {
-            
-            indicators.push(
-                <HeaderBarIcon
-                    key="reverse-follow-indicator-empty"
-                    tooltip="[Purify's Multi-User Reverse Follow] No users selected. Right-click on users and select 'Reverse Follow' to add them! | Ctrl+Shift+R to clear | Ctrl+Shift+T to pull"
-                    icon={ReverseFollowIcon}
-                    onClick={() => {
-                        Toasts.show({
-                            message: "Purify's Reverse Follow: No users selected. Right-click on users to add them!",
-                            id: Toasts.genId(),
-                            type: Toasts.Type.INFO
-                        });
-                    }}
-                />
-            );
-        }
+        const { plugins: { FollowUser: { followUserId } } } = useSettings(["plugins.FollowUser.followUserId"]);
 
-        return indicators.length > 0 ? <>{indicators}</> : null;
+        if (!followUserId) return null;
+
+        return (
+            <HeaderBarIcon
+                key="follow-indicator"
+                tooltip={`Following ${UserStore.getUser(followUserId).username} (click to trigger manually, right-click to unfollow)`}
+                icon={UnfollowIcon}
+                onClick={() => {
+                    triggerFollow();
+                }}
+                onContextMenu={() => {
+                    settings.store.followUserId = "";
+                }}
+            />
+        );
     },
 
     addIconToToolBar(e: { toolbar: React.ReactNode[] | React.ReactNode; }) {
